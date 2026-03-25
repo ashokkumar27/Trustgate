@@ -497,7 +497,7 @@ You should also provide:
 
 ---
 
-## Example positioning for leadership
+## Trustgate positioning for leadership
 
 **TrustGate Enterprise is an approval and quarantine layer for open-source software.**
 It prevents risky dependencies, artifacts, and images from being installed or promoted unless they satisfy enterprise policy around pinning, mirror source, signatures, provenance, and explainable trust signals.
@@ -506,7 +506,6 @@ It prevents risky dependencies, artifacts, and images from being installed or pr
 
 ## Roadmap ideas
 
-Good next additions for a larger rollout:
 - deeper behavioral detonation in sandbox
 - private advisory sources
 - SBOM generation and attestation validation
