@@ -100,7 +100,9 @@ def _normalize_scorecard_checks(data: dict) -> dict[str, float]:
         name = item.get("name")
         score = item.get("score")
         if name and isinstance(score, (int, float)):
-            checks[name] = float(score)
+            score = float(score)
+            if score >= 0:
+                checks[name] = score
     return checks
 
 def _lowest_important_checks(checks: dict[str, float], limit: int = 5) -> list[str]:
