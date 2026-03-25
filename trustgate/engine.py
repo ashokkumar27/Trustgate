@@ -18,15 +18,41 @@ from .policy import DEFAULT_POLICY, merge_policy
 from .utils import SEVERITY_ORDER, load_json_file, parse_package_spec, parse_requirements_file
 
 
+BLOCKING_SIGNAL_NAMES = {
+    "yanked_release",
+    "startup_hooks",
+    "sigstore_verify_failed",
+    "image_sigstore_verify_failed",
+    "slsa_missing",
+    "slsa_parse_failed",
+    "slsa_builder_mismatch",
+    "slsa_structure_missing",
+}
+
+SANDBOX_SIGNAL_NAMES = {
+    "recent_release",
+    "osv_findings",
+    "weak_scorecard",
+    "native_binaries_present",
+    "suspicious_code_patterns",
+}
+
 def decide(signals: list[Signal], policy: dict) -> tuple[int, str]:
     total_risk = sum(s.score for s in signals)
-    critical_count = sum(1 for s in signals if s.severity == "critical")
-    high_count = sum(1 for s in signals if s.severity == "high")
     trust_score = max(0, 100 - min(100, total_risk))
-    if critical_count >= 1 or total_risk >= policy["block_total_risk_gte"]:
+
+    signal_names = {s.name for s in signals}
+
+    if signal_names & BLOCKING_SIGNAL_NAMES:
         return trust_score, "block"
-    if high_count >= 1 or total_risk >= policy["sandbox_total_risk_gte"]:
+    if total_risk >= policy["block_total_risk_gte"]:
+        return trust_score, "block"
+
+    if signal_names & SANDBOX_SIGNAL_NAMES:
         return trust_score, "sandbox"
+    if total_risk >= policy["sandbox_total_risk_gte"]:
+        return trust_score, "sandbox"
+
     return trust_score, "allow"
 
 
@@ -60,7 +86,7 @@ def analyze_package(spec: str, policy_override: dict | None = None) -> AnalysisR
     dist = download_distribution(pypi)
     if dist:
         archive_path, archive_meta = dist
-        archive_signals, archive_obs = inspect_distribution(archive_path, policy)
+        archive_signals, archive_obs = inspect_distribution(archive_path, policy, package_name=name)
         signals.extend(archive_signals)
         metadata_out["distribution"] = archive_meta
         metadata_out["archive_observations"] = archive_obs
