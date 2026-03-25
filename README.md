@@ -32,7 +32,7 @@ That means:
 
 ## What it does
 
-```md
+
 ## Architecture overview
 
 ```mermaid
@@ -159,7 +159,7 @@ trustgate_enterprise/
 
 ## Installation
 
-```md
+
 ## Enterprise deployment pattern
 
 ```mermaid
@@ -272,7 +272,7 @@ This makes pipeline behavior straightforward:
 - fail the pipeline on `2`
 
 ---
-```md
+
 ## Decision flow
 
 ```mermaid
@@ -297,7 +297,7 @@ This is the core TrustGate behavior in one picture:
 3. Inspect and verify
 4. Make a clear gate decision
 5. Return an exit code CI/CD can act on immediately
-```
+
 
 ## How it works
 
