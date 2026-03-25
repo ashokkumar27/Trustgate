@@ -23,6 +23,7 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
+  basePath: '/Trustgate',
 };
 
 export default nextConfig;
