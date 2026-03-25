@@ -1,4 +1,6 @@
 {
+  "scorecard_enabled": true,
+  "scorecard_require_public_data": false,
   "require_exact_pin": true,
   "require_hashes_in_requirements": false,
   "require_internal_mirror": false,
