@@ -1,6 +1,7 @@
 from __future__ import annotations
 import ast
 import json
+from urllib.error import HTTPError, URLError
 import os
 import re
 import shutil
@@ -15,7 +16,8 @@ from .utils import USER_AGENT, hostname, http_get_json, http_post_json, iso_to_d
 
 PYPI_VERSION_URL = "https://pypi.org/pypi/{name}/{version}/json"
 OSV_QUERY_URL = "https://api.osv.dev/v1/query"
-SCORECARD_URL = "https://api.securityscorecards.dev/projects?repo={repo}"
+SCORECARD_API_BASE = "https://api.scorecard.dev"
+SCORECARD_PROJECT_URL = SCORECARD_API_BASE + "/projects/{repo}"
 
 SUSPICIOUS_STRING_PATTERNS = {
     "subprocess_exec": re.compile(r"\b(subprocess\.(run|Popen|call)|os\.system|pty\.spawn)\b"),
@@ -26,6 +28,18 @@ SUSPICIOUS_STRING_PATTERNS = {
     "credential_paths": re.compile(r"(\.ssh|id_rsa|known_hosts|\.kube|kubeconfig|docker\.json|\.npmrc|\.pypirc|netrc)"),
     "network_calls": re.compile(r"\b(requests\.|urllib\.|httpx\.|socket\.|aiohttp\.|websocket)"),
     "suspicious_shell": re.compile(r"\b(curl\s|wget\s|bash\s+-c|sh\s+-c|powershell\b)"),
+}
+
+IMPORTANT_SCORECARD_CHECKS = {
+    "Binary-Artifacts",
+    "Branch-Protection",
+    "Code-Review",
+    "Dangerous-Workflow",
+    "Maintained",
+    "Pinned-Dependencies",
+    "Security-Policy",
+    "Token-Permissions",
+    "Vulnerabilities",
 }
 
 NETWORK_LIBS = {
@@ -79,6 +93,24 @@ def extract_repo_slug(metadata: dict) -> str | None:
         if len(parts) >= 2:
             return f"github.com/{parts[0]}/{parts[1]}"
     return None
+
+def _normalize_scorecard_checks(data: dict) -> dict[str, float]:
+    checks: dict[str, float] = {}
+    for item in data.get("checks", []) or []:
+        name = item.get("name")
+        score = item.get("score")
+        if name and isinstance(score, (int, float)):
+            checks[name] = float(score)
+    return checks
+
+def _lowest_important_checks(checks: dict[str, float], limit: int = 5) -> list[str]:
+    weak = [
+        (name, score)
+        for name, score in checks.items()
+        if name in IMPORTANT_SCORECARD_CHECKS
+    ]
+    weak.sort(key=lambda x: x[1])
+    return [f"{name}={score:.1f}" for name, score in weak[:limit]]
 
 def _should_skip_pattern_scan(path: str) -> bool:
     lower = path.lower()
@@ -262,19 +294,103 @@ def query_osv(name: str, version: str, policy: dict) -> tuple[list[Signal], dict
     return signals, {"osv_vulns": aliases[:10]}
 
 def query_scorecard(repo: str | None, policy: dict) -> tuple[list[Signal], dict]:
+    if not policy.get("scorecard_enabled", True):
+        return [], {
+            "scorecard": None,
+            "scorecard_repo": repo,
+            "scorecard_checks": {},
+            "scorecard_api_url": None,
+            "scorecard_lowest_checks": [],
+        }
+
     if not repo:
-        return [Signal("missing_repo_for_scorecard", "low", 2, "No GitHub repository found for Scorecard analysis.")], {"scorecard": None}
+        return [Signal("missing_repo_for_scorecard", "low", 1, "No GitHub repository found for Scorecard analysis.")], {
+            "scorecard": None,
+            "scorecard_repo": None,
+            "scorecard_checks": {},
+            "scorecard_api_url": None,
+            "scorecard_lowest_checks": [],
+        }
+
+    url = SCORECARD_PROJECT_URL.format(repo=repo)
+
     try:
-        data = http_get_json(SCORECARD_URL.format(repo=repo), timeout=20)
-    except Exception as e:
-        return [Signal("scorecard_query_failed", "low", 2, "Scorecard query failed.", [str(e)])], {"scorecard": None}
+        data = http_get_json(url, timeout=20)
+    except HTTPError as e:
+        if e.code == 404:
+            severity = "info" if not policy.get("scorecard_require_public_data", False) else "low"
+            score = 0 if severity == "info" else 2
+            return [Signal("scorecard_unavailable", severity, score, "Public Scorecard data is not available for this repository.", [repo])], {
+                "scorecard": None,
+                "scorecard_repo": repo,
+                "scorecard_checks": {},
+                "scorecard_api_url": url,
+                "scorecard_lowest_checks": [],
+            }
+        return [Signal("scorecard_query_failed", "low", 1, "Scorecard query failed.", [f"http_{e.code}", repo])], {
+            "scorecard": None,
+            "scorecard_repo": repo,
+            "scorecard_checks": {},
+            "scorecard_api_url": url,
+            "scorecard_lowest_checks": [],
+        }
+    except (URLError, TimeoutError, ValueError) as e:
+        return [Signal("scorecard_query_failed", "low", 1, "Scorecard query failed.", [str(e)[:200], repo])], {
+            "scorecard": None,
+            "scorecard_repo": repo,
+            "scorecard_checks": {},
+            "scorecard_api_url": url,
+            "scorecard_lowest_checks": [],
+        }
+
     score = data.get("score")
+    checks = _normalize_scorecard_checks(data)
+    lowest_checks = _lowest_important_checks(checks)
+
     signals = []
+    meta = {
+        "scorecard": score,
+        "scorecard_repo": repo,
+        "scorecard_checks": checks,
+        "scorecard_api_url": url,
+        "scorecard_lowest_checks": lowest_checks,
+    }
+
     if score is None:
-        signals.append(Signal("scorecard_missing", "low", 2, "Scorecard data not available."))
-    elif score < policy["weak_scorecard_threshold"] and policy["sandbox_on_weak_scorecard"]:
-        signals.append(Signal("weak_scorecard", "medium", 8, "OpenSSF Scorecard is below threshold.", [f"score={score}"]))
-    return signals, {"scorecard": score}
+        signals.append(Signal("scorecard_missing", "info", 0, "Scorecard data was returned without an overall score.", [repo]))
+        return signals, meta
+
+    if score < policy["weak_scorecard_threshold"] and policy["sandbox_on_weak_scorecard"]:
+        evidence = [f"score={score:.1f}"]
+        evidence.extend(lowest_checks)
+        signals.append(
+            Signal(
+                "weak_scorecard",
+                "medium",
+                8,
+                "OpenSSF Scorecard is below threshold.",
+                evidence[:6],
+            )
+        )
+
+    critical_weak = []
+    for name in ("Dangerous-Workflow", "Token-Permissions", "Branch-Protection", "Code-Review"):
+        val = checks.get(name)
+        if val is not None and val < 5:
+            critical_weak.append(f"{name}={val:.1f}")
+
+    if critical_weak:
+        signals.append(
+            Signal(
+                "scorecard_critical_checks_weak",
+                "low",
+                4,
+                "Important Scorecard checks are weak.",
+                critical_weak[:4],
+            )
+        )
+
+    return signals, meta
 
 def verify_sigstore_artifact(artifact_path: str, bundle_path: str | None, certificate_path: str | None, policy: dict) -> tuple[list[Signal], dict]:
     signals: list[Signal] = []
