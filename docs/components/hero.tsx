@@ -41,11 +41,14 @@ export function Hero() {
             transition={{ duration: 0.5 }}
             className="max-w-2xl min-w-0"
           >
-            <div className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 mb-6 shadow-sm hover:bg-blue-100 transition-colors cursor-pointer">
-              <span className="flex h-2 w-2 rounded-full bg-blue-600 mr-2 animate-pulse"></span>
+            <Link 
+              href="https://github.com/ashokkumar27/Trustgate/releases" 
+              target="_blank"
+              className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 mb-6 shadow-sm hover:bg-blue-100 transition-colors cursor-pointer"
+            >              <span className="flex h-2 w-2 rounded-full bg-blue-600 mr-2 animate-pulse"></span>
               <span>TrustGate v1.0 is now available</span>
               <ArrowRight className="ml-2 h-3.5 w-3.5" />
-            </div>
+            </Link>
             <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 mb-6 leading-tight">
               Secure your <span className="text-blue-600">software supply chain</span> with confidence.
             </h1>
