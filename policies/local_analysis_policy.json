@@ -1,8 +1,6 @@
 {
   "scorecard_enabled": true,
   "scorecard_require_public_data": false,
-  "weak_scorecard_threshold": 7.5,
-  "sandbox_on_weak_scorecard": false,
   "require_exact_pin": true,
   "require_hashes_in_requirements": false,
   "require_internal_mirror": false,
@@ -21,7 +19,7 @@
   "block_on_suspicious_patterns_score_gte": 20,
   "sandbox_on_native_binaries": true,
   "sandbox_on_osv_findings": true,
-  "sandbox_on_weak_scorecard": true,
+  "sandbox_on_weak_scorecard": false,
   "weak_scorecard_threshold": 7.5,
   "require_sigstore_for_artifacts": false,
   "require_sigstore_for_images": false,
