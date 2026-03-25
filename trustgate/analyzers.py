@@ -19,7 +19,9 @@ SCORECARD_URL = "https://api.securityscorecards.dev/projects?repo={repo}"
 
 SUSPICIOUS_STRING_PATTERNS = {
     "subprocess_exec": re.compile(r"\b(subprocess\.(run|Popen|call)|os\.system|pty\.spawn)\b"),
-    "base64_exec": re.compile(r"\b(base64\.b64decode|marshal\.loads|exec\(|eval\()"),
+    "base64_decode": re.compile(r"\bbase64\.b64decode\b"),
+    "marshal_exec": re.compile(r"\bmarshal\.loads\b"),
+    "eval_exec": re.compile(r"\b(exec\(|eval\()"),
     "env_secret_access": re.compile(r"\b(os\.environ|getenv\(|\.env|AWS_|GCP_|AZURE_|OPENAI_API_KEY|ANTHROPIC_API_KEY)"),
     "credential_paths": re.compile(r"(\.ssh|id_rsa|known_hosts|\.kube|kubeconfig|docker\.json|\.npmrc|\.pypirc|netrc)"),
     "network_calls": re.compile(r"\b(requests\.|urllib\.|httpx\.|socket\.|aiohttp\.|websocket)"),
@@ -36,9 +38,12 @@ CLI_LIBS = {
 
 PATTERN_WEIGHTS = {
     "subprocess_exec": 4,
-    "base64_exec": 12,
+    "base64_decode": 2,
+    "marshal_exec": 10,
+    "eval_exec": 10,
+    "base64_exec_chain": 12,
     "env_secret_access": 2,
-    "credential_paths": 8,
+    "credential_paths": 4,
     "network_calls": 2,
     "startup_hooks": 15,
     "suspicious_shell": 10,
@@ -51,6 +56,8 @@ def _benign_patterns_for_package(package_name: str) -> set[str]:
         benign.add("network_calls")
     if pkg in CLI_LIBS:
         benign.update({"env_secret_access", "subprocess_exec"})
+    if pkg in NETWORK_LIBS:
+        benign.update({"env_secret_access", "credential_paths"})
     return benign
 
 def _effective_matches(package_name: str, matches: list[str]) -> list[str]:
@@ -72,6 +79,14 @@ def extract_repo_slug(metadata: dict) -> str | None:
         if len(parts) >= 2:
             return f"github.com/{parts[0]}/{parts[1]}"
     return None
+
+def _should_skip_pattern_scan(path: str) -> bool:
+    lower = path.lower()
+    if ".dist-info/" in lower or ".egg-info/" in lower:
+        return True
+    if lower.endswith(("metadata", "pkg-info", "record")):
+        return True
+    return False
 
 def metadata_signals(metadata: dict, version: str, policy: dict) -> tuple[list[Signal], dict]:
     signals: list[Signal] = []
@@ -147,6 +162,8 @@ def inspect_distribution(archive_path: Path, policy: dict, package_name: str = "
     def process_member(path: str, raw: bytes) -> None:
         nonlocal suspicious_score
         lower = path.lower()
+        if _should_skip_pattern_scan(path):
+            return
         base = os.path.basename(lower)
         if base.endswith(".pth") or base in {"sitecustomize.py", "usercustomize.py"}:
             obs["startup_hook_files"].append(path)
@@ -171,6 +188,10 @@ def inspect_distribution(archive_path: Path, policy: dict, package_name: str = "
                 pass
 
         effective = sorted(set(_effective_matches(package_name, matched)))
+        if "base64_decode" in effective and ("eval_exec" in effective or "marshal_exec" in effective):
+            effective.append("base64_exec_chain")
+
+        effective = sorted(set(m for m in effective if m != "base64_decode"))
         if effective:
             suspicious_score += sum(PATTERN_WEIGHTS.get(m, 3) for m in effective)
             if len(obs["suspicious_examples"]) < 12:
