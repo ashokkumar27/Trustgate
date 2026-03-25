@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import ast
 import json
 import os
@@ -27,6 +26,36 @@ SUSPICIOUS_STRING_PATTERNS = {
     "startup_hooks": re.compile(r"(\.pth\b|sitecustomize|usercustomize)"),
     "suspicious_shell": re.compile(r"\b(curl\s|wget\s|bash\s+-c|sh\s+-c|powershell\b)"),
 }
+
+NETWORK_LIBS = {
+    "requests", "httpx", "urllib3", "aiohttp", "websocket-client", "boto3", "botocore",
+}
+CLI_LIBS = {
+    "click", "typer", "rich-click",
+}
+
+PATTERN_WEIGHTS = {
+    "subprocess_exec": 4,
+    "base64_exec": 12,
+    "env_secret_access": 2,
+    "credential_paths": 8,
+    "network_calls": 2,
+    "startup_hooks": 15,
+    "suspicious_shell": 10,
+}
+
+def _benign_patterns_for_package(package_name: str) -> set[str]:
+    pkg = (package_name or "").lower()
+    benign = set()
+    if pkg in NETWORK_LIBS:
+        benign.add("network_calls")
+    if pkg in CLI_LIBS:
+        benign.update({"env_secret_access", "subprocess_exec"})
+    return benign
+
+def _effective_matches(package_name: str, matches: list[str]) -> list[str]:
+    benign = _benign_patterns_for_package(package_name)
+    return [m for m in matches if m not in benign]
 
 def fetch_pypi_metadata(name: str, version: str) -> dict:
     return http_get_json(PYPI_VERSION_URL.format(name=name, version=version))
@@ -110,7 +139,7 @@ def download_distribution(metadata: dict) -> tuple[Path, dict] | None:
     meta = {"filename": chosen["filename"], "url": chosen["url"], "sha256": sha256_file(path), "size": path.stat().st_size}
     return path, meta
 
-def inspect_distribution(archive_path: Path, policy: dict) -> tuple[list[Signal], dict]:
+def inspect_distribution(archive_path: Path, policy: dict, package_name: str = "") -> tuple[list[Signal], dict]:
     signals: list[Signal] = []
     obs: dict = {"startup_hook_files": [], "suspicious_examples": [], "native_binaries": []}
     suspicious_score = 0
@@ -130,6 +159,7 @@ def inspect_distribution(archive_path: Path, policy: dict) -> tuple[list[Signal]
         for label, pat in SUSPICIOUS_STRING_PATTERNS.items():
             if pat.search(text):
                 matched.append(label)
+
         if lower.endswith(".py"):
             try:
                 tree = ast.parse(text)
@@ -139,10 +169,12 @@ def inspect_distribution(archive_path: Path, policy: dict) -> tuple[list[Signal]
                             matched.append("base64_exec")
             except Exception:
                 pass
-        if matched:
-            suspicious_score += len(set(matched)) * 3
+
+        effective = sorted(set(_effective_matches(package_name, matched)))
+        if effective:
+            suspicious_score += sum(PATTERN_WEIGHTS.get(m, 3) for m in effective)
             if len(obs["suspicious_examples"]) < 12:
-                obs["suspicious_examples"].append(f"{path}: {', '.join(sorted(set(matched)))}")
+                obs["suspicious_examples"].append(f"{path}: {', '.join(effective)}")
 
     name = archive_path.name.lower()
     if name.endswith(".whl") or name.endswith(".zip"):
@@ -162,10 +194,27 @@ def inspect_distribution(archive_path: Path, policy: dict) -> tuple[list[Signal]
 
     if obs["startup_hook_files"] and policy["block_on_startup_hooks"]:
         signals.append(Signal("startup_hooks", "critical", 40, "Startup hook files detected.", obs["startup_hook_files"][:10]))
+
     if suspicious_score >= policy["block_on_suspicious_patterns_score_gte"]:
-        signals.append(Signal("suspicious_code_patterns", "high", min(35, suspicious_score), "Suspicious patterns exceeded threshold.", obs["suspicious_examples"][:10]))
-    elif suspicious_score > 0:
-        signals.append(Signal("minor_suspicious_patterns", "medium", suspicious_score, "Suspicious patterns detected.", obs["suspicious_examples"][:10]))
+        signals.append(
+            Signal(
+                "suspicious_code_patterns",
+                "high",
+                min(35, suspicious_score),
+                "Suspicious patterns exceeded threshold.",
+                obs["suspicious_examples"][:10],
+            )
+        )
+    elif suspicious_score >= 8:
+        signals.append(
+            Signal(
+                "minor_suspicious_patterns",
+                "medium",
+                min(15, suspicious_score),
+                "Suspicious patterns detected.",
+                obs["suspicious_examples"][:10],
+            )
+        )
     if obs["native_binaries"] and policy["sandbox_on_native_binaries"]:
         signals.append(Signal("native_binaries_present", "medium", 8, "Package contains native binaries.", obs["native_binaries"][:10]))
 
