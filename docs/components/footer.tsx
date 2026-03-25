@@ -59,7 +59,7 @@ export function Footer() {
         </div>
         <div className="mt-12 pt-8 border-t border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-slate-500">
-            &copy; {new Date().getFullYear()} TrustGate Contributors. Released under the MIT License.
+            &copy; {new Date().getFullYear()} TrustGate Contributors. Released under the Apache 2.0 License.
           </p>
           <div className="flex items-center gap-2 text-sm text-slate-500">
             <span>Built for the open source community.</span>
