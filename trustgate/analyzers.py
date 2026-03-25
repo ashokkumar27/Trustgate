@@ -105,11 +105,15 @@ def _normalize_scorecard_checks(data: dict) -> dict[str, float]:
                 checks[name] = score
     return checks
 
-def _lowest_important_checks(checks: dict[str, float], limit: int = 5) -> list[str]:
+def _lowest_important_checks(
+    checks: dict[str, float],
+    limit: int = 5,
+    weak_threshold: float = 7.5,
+) -> list[str]:
     weak = [
         (name, score)
         for name, score in checks.items()
-        if name in IMPORTANT_SCORECARD_CHECKS
+        if name in IMPORTANT_SCORECARD_CHECKS and score < weak_threshold
     ]
     weak.sort(key=lambda x: x[1])
     return [f"{name}={score:.1f}" for name, score in weak[:limit]]
@@ -347,7 +351,10 @@ def query_scorecard(repo: str | None, policy: dict) -> tuple[list[Signal], dict]
 
     score = data.get("score")
     checks = _normalize_scorecard_checks(data)
-    lowest_checks = _lowest_important_checks(checks)
+    lowest_checks = _lowest_important_checks(
+        checks,
+        weak_threshold=policy["weak_scorecard_threshold"],
+    )
 
     signals = []
     meta = {
@@ -362,14 +369,18 @@ def query_scorecard(repo: str | None, policy: dict) -> tuple[list[Signal], dict]
         signals.append(Signal("scorecard_missing", "info", 0, "Scorecard data was returned without an overall score.", [repo]))
         return signals, meta
 
-    if score < policy["weak_scorecard_threshold"] and policy["sandbox_on_weak_scorecard"]:
+    if score < policy["weak_scorecard_threshold"]:
         evidence = [f"score={score:.1f}"]
         evidence.extend(lowest_checks)
+    
+        severity = "medium" if policy.get("sandbox_on_weak_scorecard", False) else "low"
+        risk_score = 8 if policy.get("sandbox_on_weak_scorecard", False) else 3
+    
         signals.append(
             Signal(
                 "weak_scorecard",
-                "medium",
-                8,
+                severity,
+                risk_score,
                 "OpenSSF Scorecard is below threshold.",
                 evidence[:6],
             )
@@ -380,13 +391,13 @@ def query_scorecard(repo: str | None, policy: dict) -> tuple[list[Signal], dict]
         val = checks.get(name)
         if val is not None and val < 5:
             critical_weak.append(f"{name}={val:.1f}")
-
+    
     if critical_weak:
         signals.append(
             Signal(
                 "scorecard_critical_checks_weak",
                 "low",
-                4,
+                3,
                 "Important Scorecard checks are weak.",
                 critical_weak[:4],
             )
