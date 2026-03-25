@@ -10,10 +10,10 @@ export function Footer() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="md:col-span-2 min-w-0">
-            <div className="flex items-center gap-2 mb-4">
+            <Link href="/" className="flex items-center gap-2 mb-4 hover:opacity-80 transition-opacity">
               <ShieldCheck className="h-6 w-6 text-blue-600" />
               <span className="text-lg font-bold tracking-tight text-slate-900">TrustGate</span>
-            </div>
+            </Link>
             <p className="text-sm text-slate-600 max-w-sm mb-6">
               Zero-trust supply chain security, package analysis, and CI/CD gating. Open source and built for the enterprise.
             </p>
