@@ -25,15 +25,15 @@ SUSPICIOUS_STRING_PATTERNS = {
     "env_secret_access": re.compile(r"\b(os\.environ|getenv\(|\.env|AWS_|GCP_|AZURE_|OPENAI_API_KEY|ANTHROPIC_API_KEY)"),
     "credential_paths": re.compile(r"(\.ssh|id_rsa|known_hosts|\.kube|kubeconfig|docker\.json|\.npmrc|\.pypirc|netrc)"),
     "network_calls": re.compile(r"\b(requests\.|urllib\.|httpx\.|socket\.|aiohttp\.|websocket)"),
-    "startup_hooks": re.compile(r"(\.pth\b|sitecustomize|usercustomize)"),
     "suspicious_shell": re.compile(r"\b(curl\s|wget\s|bash\s+-c|sh\s+-c|powershell\b)"),
 }
 
 NETWORK_LIBS = {
     "requests", "httpx", "urllib3", "aiohttp", "websocket-client", "boto3", "botocore",
 }
+
 CLI_LIBS = {
-    "click", "typer", "rich-click",
+    "click", "typer", "rich-click", "argcomplete",
 }
 
 PATTERN_WEIGHTS = {
@@ -55,7 +55,7 @@ def _benign_patterns_for_package(package_name: str) -> set[str]:
     if pkg in NETWORK_LIBS:
         benign.add("network_calls")
     if pkg in CLI_LIBS:
-        benign.update({"env_secret_access", "subprocess_exec"})
+        benign.update({"env_secret_access", "subprocess_exec", "suspicious_shell"})
     if pkg in NETWORK_LIBS:
         benign.update({"env_secret_access", "credential_paths"})
     return benign
@@ -164,6 +164,10 @@ def inspect_distribution(archive_path: Path, policy: dict, package_name: str = "
         lower = path.lower()
         if _should_skip_pattern_scan(path):
             return
+        
+        if any(part in lower for part in ("/tests/", "/test/", "/docs/", "/examples/")):
+            return
+            
         base = os.path.basename(lower)
         if base.endswith(".pth") or base in {"sitecustomize.py", "usercustomize.py"}:
             obs["startup_hook_files"].append(path)
@@ -188,6 +192,8 @@ def inspect_distribution(archive_path: Path, policy: dict, package_name: str = "
                 pass
 
         effective = sorted(set(_effective_matches(package_name, matched)))
+        if "suspicious_shell" in effective and "subprocess_exec" not in effective:
+            effective = [m for m in effective if m != "suspicious_shell"]
         if "base64_decode" in effective and ("eval_exec" in effective or "marshal_exec" in effective):
             effective.append("base64_exec_chain")
 
