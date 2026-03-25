@@ -91,14 +91,6 @@ def analyze_package(spec: str, policy_override: dict | None = None) -> AnalysisR
         signals.extend(archive_signals)
         metadata_out["distribution"] = archive_meta
         metadata_out["archive_observations"] = archive_obs
-        sig_signals, sig_meta = verify_sigstore_artifact(
-            artifact_path=str(archive_path),
-            bundle_path=None,
-            certificate_path=None,
-            policy=policy,
-        )
-        signals.extend(sig_signals)
-        metadata_out.update(sig_meta)
     else:
         signals.append(Signal("distribution_download_failed", "high", 20, "Could not download package distribution for inspection."))
 
