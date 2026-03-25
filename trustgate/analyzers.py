@@ -373,14 +373,13 @@ def query_scorecard(repo: str | None, policy: dict) -> tuple[list[Signal], dict]
         evidence = [f"score={score:.1f}"]
         evidence.extend(lowest_checks)
     
-        severity = "medium" if policy.get("sandbox_on_weak_scorecard", False) else "low"
-        risk_score = 8 if policy.get("sandbox_on_weak_scorecard", False) else 3
+        sandbox_enabled = policy.get("sandbox_on_weak_scorecard", False)
     
         signals.append(
             Signal(
                 "weak_scorecard",
-                severity,
-                risk_score,
+                "medium" if sandbox_enabled else "low",
+                8 if sandbox_enabled else 2,
                 "OpenSSF Scorecard is below threshold.",
                 evidence[:6],
             )
