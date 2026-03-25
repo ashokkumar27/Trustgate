@@ -1,6 +1,8 @@
 {
   "scorecard_enabled": true,
   "scorecard_require_public_data": false,
+  "weak_scorecard_threshold": 5.0,
+  "sandbox_on_weak_scorecard": false,
   "require_exact_pin": true,
   "require_hashes_in_requirements": false,
   "require_internal_mirror": false,
