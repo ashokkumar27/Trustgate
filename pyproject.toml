@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trustgate-enterprise"
+version = "1.0.0"
+description = "Enterprise dependency and artifact gatekeeper for Python packages and OCI images"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "OpenAI"}]
+dependencies = []
+
+[project.scripts]
+trustgate = "trustgate.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["trustgate*"]
