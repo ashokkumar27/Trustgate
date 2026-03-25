@@ -1,0 +1,44 @@
+{
+  "require_exact_pin": true,
+  "require_hashes_in_requirements": true,
+  "require_internal_mirror": true,
+  "approved_package_hosts": [
+    "pypi.company.internal",
+    "artifacts.company.internal"
+  ],
+  "approved_image_registries": [
+    "registry.company.internal"
+  ],
+  "allow_public_fallback_for_analysis_only": true,
+  "block_release_age_lt_hours": 24,
+  "sandbox_release_age_lt_hours": 168,
+  "block_on_yanked": true,
+  "block_on_startup_hooks": true,
+  "block_on_suspicious_patterns_score_gte": 12,
+  "sandbox_on_native_binaries": true,
+  "sandbox_on_osv_findings": true,
+  "sandbox_on_weak_scorecard": true,
+  "weak_scorecard_threshold": 7.5,
+  "require_sigstore_for_artifacts": true,
+  "require_sigstore_for_images": true,
+  "required_signer_identities": [
+    "security@company.com"
+  ],
+  "required_oidc_issuers": [
+    "https://token.actions.githubusercontent.com"
+  ],
+  "require_slsa_provenance": true,
+  "required_slsa_builder_identities": [
+    "https://github.com/company/ci/.github/workflows/build.yml@refs/heads/main"
+  ],
+  "block_total_risk_gte": 70,
+  "sandbox_total_risk_gte": 30,
+  "sandbox_network_mode": "none",
+  "sandbox_readonly_rootfs": true,
+  "critical_packages": [
+    "pip",
+    "setuptools",
+    "wheel",
+    "twine"
+  ]
+}
