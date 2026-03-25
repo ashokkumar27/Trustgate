@@ -32,7 +32,6 @@ BLOCKING_SIGNAL_NAMES = {
 SANDBOX_SIGNAL_NAMES = {
     "recent_release",
     "osv_findings",
-    "weak_scorecard",
     "native_binaries_present",
     "suspicious_code_patterns",
 }
