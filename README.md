@@ -32,6 +32,44 @@ That means:
 
 ## What it does
 
+```md
+## Architecture overview
+
+```mermaid
+flowchart LR
+    U[Developer / CI / Security Pipeline] --> CLI[TrustGate CLI]
+
+    CLI --> ENG[Decision Engine]
+    ENG --> POL[Policy Loader]
+    ENG --> ANA[Analyzers]
+    ENG --> SBX[Sandbox Generator]
+
+    ANA --> PKG[Package Analysis]
+    ANA --> REQ[Requirements Analysis]
+    ANA --> ART[Artifact Verification]
+    ANA --> IMG[Image Verification]
+
+    PKG --> META[PyPI / Index Metadata]
+    PKG --> ARCH[Archive Inspection]
+    PKG --> OSV[OSV Advisory Check]
+    PKG --> SCORE[OpenSSF Scorecard]
+    PKG --> SIG[Sigstore / Cosign Hook]
+
+    REQ --> HASH[Pin + Hash Validation]
+
+    ART --> PROV1[SLSA Provenance Check]
+    ART --> SIG2[Artifact Signature Verification]
+
+    IMG --> REG[Approved Registry Check]
+    IMG --> PROV2[SLSA Provenance Check]
+    IMG --> SIG3[Image Signature Verification]
+
+    ENG --> DEC{Decision}
+    DEC --> ALLOW[ALLOW]
+    DEC --> SANDBOX[SANDBOX]
+    DEC --> BLOCK[BLOCK]
+```
+
 TrustGate provides a single control point in front of:
 - Python packages from PyPI-compatible indexes
 - `requirements.txt` dependency sets
@@ -121,6 +159,32 @@ trustgate_enterprise/
 
 ## Installation
 
+```md
+## Enterprise deployment pattern
+
+```mermaid
+flowchart LR
+    DEV[Developer Laptop] --> PR[Dependency Change / Pull Request]
+    PR --> CI[CI Runner with TrustGate]
+
+    CI --> TG[TrustGate]
+    TG --> MIRROR[Internal Package Mirror]
+    TG --> REG[Internal Image Registry]
+    TG --> REVIEW[Sandbox / Review Host]
+
+    TG -->|ALLOW| BUILD[Build / Promote]
+    TG -->|SANDBOX| REVIEW
+    TG -->|BLOCK| FAIL[Fail Pipeline]
+
+    BUILD --> ART[Signed Artifact]
+    BUILD --> IMG[Signed Container Image]
+
+    ART --> TG
+    IMG --> TG
+
+    TG --> PROD[Staging / Production]
+```
+
 ### Basic
 
 ```bash
@@ -208,6 +272,32 @@ This makes pipeline behavior straightforward:
 - fail the pipeline on `2`
 
 ---
+```md
+## Decision flow
+
+```mermaid
+flowchart TD
+    A[Input arrives<br/>package / requirements / artifact / image] --> B[Load enterprise policy]
+    B --> C[Run relevant analyzers]
+    C --> D[Collect signals and evidence]
+    D --> E[Apply scoring + hard policy rules]
+    E --> F{Decision}
+
+    F -->|ALLOW| G[Return exit code 0<br/>continue pipeline]
+    F -->|SANDBOX| H[Return exit code 1<br/>run in isolated environment]
+    F -->|BLOCK| I[Return exit code 2<br/>fail immediately]
+```
+
+### Why this matters
+
+This is the core TrustGate behavior in one picture:
+
+1. Take the input
+2. Apply policy
+3. Inspect and verify
+4. Make a clear gate decision
+5. Return an exit code CI/CD can act on immediately
+```
 
 ## How it works
 
