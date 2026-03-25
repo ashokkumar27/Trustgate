@@ -20,7 +20,7 @@
   "sandbox_on_native_binaries": true,
   "sandbox_on_osv_findings": true,
   "sandbox_on_weak_scorecard": false,
-  "weak_scorecard_threshold": 7.5,
+  "weak_scorecard_threshold": 6,
   "require_sigstore_for_artifacts": false,
   "require_sigstore_for_images": false,
   "required_signer_identities": [],
