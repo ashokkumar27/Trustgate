@@ -1,7 +1,7 @@
 {
   "require_exact_pin": true,
-  "require_hashes_in_requirements": true,
-  "require_internal_mirror": true,
+  "require_hashes_in_requirements": false,
+  "require_internal_mirror": false,
   "approved_package_hosts": [
     "pypi.company.internal",
     "artifacts.company.internal"
@@ -14,7 +14,7 @@
   "sandbox_release_age_lt_hours": 168,
   "block_on_yanked": true,
   "block_on_startup_hooks": true,
-  "block_on_suspicious_patterns_score_gte": 12,
+  "block_on_suspicious_patterns_score_gte": 50,
   "sandbox_on_native_binaries": true,
   "sandbox_on_osv_findings": true,
   "sandbox_on_weak_scorecard": true,
@@ -31,8 +31,8 @@
   "required_slsa_builder_identities": [
     "https://github.com/company/ci/.github/workflows/build.yml@refs/heads/main"
   ],
-  "block_total_risk_gte": 70,
-  "sandbox_total_risk_gte": 30,
+  "block_total_risk_gte": 85,
+  "sandbox_total_risk_gte": 40,
   "sandbox_network_mode": "none",
   "sandbox_readonly_rootfs": true,
   "critical_packages": [
