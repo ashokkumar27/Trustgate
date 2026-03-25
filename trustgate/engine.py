@@ -34,6 +34,8 @@ SANDBOX_SIGNAL_NAMES = {
     "osv_findings",
     "native_binaries_present",
     "suspicious_code_patterns",
+    "credential_harvest_patterns",
+    "shell_exfil_patterns",
 }
 
 def decide(signals: list[Signal], policy: dict) -> tuple[int, str]:
