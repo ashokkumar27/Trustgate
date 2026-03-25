@@ -63,6 +63,15 @@ PATTERN_WEIGHTS = {
     "suspicious_shell": 10,
 }
 
+COMBO_PATTERN_WEIGHTS = {
+    "credential_harvest_combo": 12,
+    "shell_exfil_combo": 12,
+}
+
+NETWORK_AUTH_LIBS = {
+    "requests", "httpx", "urllib3", "aiohttp", "boto3", "botocore",
+}
+
 def _benign_patterns_for_package(package_name: str) -> set[str]:
     pkg = (package_name or "").lower()
     benign = set()
@@ -70,7 +79,7 @@ def _benign_patterns_for_package(package_name: str) -> set[str]:
         benign.add("network_calls")
     if pkg in CLI_LIBS:
         benign.update({"env_secret_access", "subprocess_exec", "suspicious_shell"})
-    if pkg in NETWORK_LIBS:
+    if pkg in NETWORK_AUTH_LIBS:
         benign.update({"env_secret_access", "credential_paths"})
     return benign
 
@@ -223,21 +232,36 @@ def inspect_distribution(archive_path: Path, policy: dict, package_name: str = "
             try:
                 tree = ast.parse(text)
                 for node in ast.walk(tree):
-                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"exec", "eval", "compile", "__import__"}:
-                        if "base64_exec" not in matched:
-                            matched.append("base64_exec")
+                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                        if node.func.id in {"exec", "eval"}:
+                            if "eval_exec" not in matched:
+                                matched.append("eval_exec")
+                        elif node.func.id == "__import__":
+                            if "eval_exec" not in matched:
+                                matched.append("eval_exec")
             except Exception:
                 pass
 
         effective = sorted(set(_effective_matches(package_name, matched)))
+        
         if "suspicious_shell" in effective and "subprocess_exec" not in effective:
             effective = [m for m in effective if m != "suspicious_shell"]
+        
+        if "env_secret_access" in effective and "credential_paths" in effective:
+            effective.append("credential_harvest_combo")
+        
+        if "subprocess_exec" in effective and "suspicious_shell" in effective:
+            effective.append("shell_exfil_combo")
+        
         if "base64_decode" in effective and ("eval_exec" in effective or "marshal_exec" in effective):
             effective.append("base64_exec_chain")
-
+        
         effective = sorted(set(m for m in effective if m != "base64_decode"))
+        
         if effective:
             suspicious_score += sum(PATTERN_WEIGHTS.get(m, 3) for m in effective)
+            suspicious_score += sum(COMBO_PATTERN_WEIGHTS.get(m, 0) for m in effective)
+        
             if len(obs["suspicious_examples"]) < 12:
                 obs["suspicious_examples"].append(f"{path}: {', '.join(effective)}")
 
@@ -260,6 +284,31 @@ def inspect_distribution(archive_path: Path, policy: dict, package_name: str = "
     if obs["startup_hook_files"] and policy["block_on_startup_hooks"]:
         signals.append(Signal("startup_hooks", "critical", 40, "Startup hook files detected.", obs["startup_hook_files"][:10]))
 
+    has_credential_combo = any("credential_harvest_combo" in x for x in obs["suspicious_examples"])
+    has_shell_combo = any("shell_exfil_combo" in x for x in obs["suspicious_examples"])
+    
+    if has_credential_combo:
+        signals.append(
+            Signal(
+                "credential_harvest_patterns",
+                "high",
+                18,
+                "Package shows likely credential-harvesting behavior.",
+                obs["suspicious_examples"][:10],
+            )
+        )
+    
+    if has_shell_combo:
+        signals.append(
+            Signal(
+                "shell_exfil_patterns",
+                "high",
+                18,
+                "Package shows likely shell-based execution or exfiltration behavior.",
+                obs["suspicious_examples"][:10],
+            )
+        )
+    
     if suspicious_score >= policy["block_on_suspicious_patterns_score_gte"]:
         signals.append(
             Signal(
