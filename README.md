@@ -203,6 +203,24 @@ Trustgate/
 
 ---
 
+
+## Testing
+
+Run these checks for every code change to ensure TrustGate keeps working end-to-end:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py" -v
+python -m compileall trustgate
+python -m trustgate.cli policy-show
+python -m trustgate.cli analyze requests==2.32.3 --json --policy policies/local_analysis_policy.json
+python -m trustgate.cli analyze-requirements requirements.txt --policy policies/local_analysis_policy.json
+```
+
+Recommended CI order:
+1. Static sanity (`compileall`)
+2. Unit tests (`unittest`)
+3. CLI smoke tests (`policy-show`, `analyze`, `analyze-requirements`)
+
 ## Installation
 
 ### Basic
