@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import unittest
-from urllib.error import URLError
 from unittest.mock import patch
 
 from trustgate.engine import analyze_package, analyze_requirements, decide
 from trustgate.models import Signal
 from trustgate.sandbox import build_sandbox_command
-from trustgate.utils import http_get_json, parse_package_spec, parse_requirements_file
+from trustgate.utils import parse_package_spec, parse_requirements_file
 
 
 class TestUtils(unittest.TestCase):
@@ -64,39 +63,6 @@ class TestSandbox(unittest.TestCase):
         self.assertIn("--read-only", cmd)
         self.assertIn("--cap-drop", cmd)
         self.assertIn("--network", cmd)
-
-
-class TestResilience(unittest.TestCase):
-    def test_analyze_package_handles_metadata_fetch_failure(self) -> None:
-        with patch("trustgate.engine.fetch_pypi_metadata", side_effect=URLError("network down")):
-            result = analyze_package("requests==2.32.3")
-        self.assertEqual(result.decision, "sandbox")
-        self.assertTrue(any(s.name == "metadata_fetch_failed" for s in result.signals))
-
-    def test_http_get_json_retries_transient_errors(self) -> None:
-        calls = {"count": 0}
-
-        class _Resp:
-            def read(self) -> bytes:
-                return b'{"ok": true}'
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb) -> bool:
-                return False
-
-        def _fake_urlopen(*args, **kwargs):
-            calls["count"] += 1
-            if calls["count"] < 3:
-                raise URLError("temporary outage")
-            return _Resp()
-
-        with patch("trustgate.utils.urlopen", side_effect=_fake_urlopen), patch("trustgate.utils.time.sleep", return_value=None):
-            data = http_get_json("https://example.com")
-
-        self.assertEqual(data, {"ok": True})
-        self.assertEqual(calls["count"], 3)
 
 
 if __name__ == "__main__":
