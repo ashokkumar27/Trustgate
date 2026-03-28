@@ -6,8 +6,10 @@ import json
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -49,21 +51,47 @@ def parse_requirements_file(path: str) -> list[dict[str, str | None]]:
     return out
 
 
-def http_get_json(url: str, timeout: int = 20) -> dict[str, Any]:
+def _should_retry_http_error(code: int) -> bool:
+    return code in {408, 425, 429, 500, 502, 503, 504}
+
+
+def _request_json(req: Request, timeout: int, retries: int, backoff_seconds: float) -> dict[str, Any]:
+    last_error: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            with urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except HTTPError as e:
+            last_error = e
+            if attempt < retries and _should_retry_http_error(e.code):
+                time.sleep(backoff_seconds * (2 ** attempt))
+                continue
+            raise
+        except (URLError, TimeoutError) as e:
+            last_error = e
+            if attempt < retries:
+                time.sleep(backoff_seconds * (2 ** attempt))
+                continue
+            raise
+
+    if last_error is None:
+        raise RuntimeError("JSON request failed without a captured exception.")
+    raise last_error
+
+
+def http_get_json(url: str, timeout: int = 20, retries: int = 2, backoff_seconds: float = 0.25) -> dict[str, Any]:
     req = Request(url, headers={"User-Agent": USER_AGENT})
-    with urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    return _request_json(req, timeout=timeout, retries=retries, backoff_seconds=backoff_seconds)
 
 
-def http_post_json(url: str, payload: dict[str, Any], timeout: int = 20) -> dict[str, Any]:
+def http_post_json(url: str, payload: dict[str, Any], timeout: int = 20, retries: int = 2, backoff_seconds: float = 0.25) -> dict[str, Any]:
     req = Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
         headers={"User-Agent": USER_AGENT, "Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    return _request_json(req, timeout=timeout, retries=retries, backoff_seconds=backoff_seconds)
 
 
 def http_head(url: str, timeout: int = 20) -> dict[str, Any]:
