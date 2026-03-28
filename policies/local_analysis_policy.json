@@ -1,4 +1,5 @@
 {
+  "policy_version": 1,
   "scorecard_enabled": true,
   "scorecard_require_public_data": false,
   "require_exact_pin": true,

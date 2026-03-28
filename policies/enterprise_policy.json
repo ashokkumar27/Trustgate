@@ -1,4 +1,5 @@
 {
+  "policy_version": 1,
   "require_exact_pin": true,
   "require_hashes_in_requirements": false,
   "require_internal_mirror": false,

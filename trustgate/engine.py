@@ -71,15 +71,29 @@ def analyze_package(spec: str, policy_override: dict | None = None) -> AnalysisR
     signals: list[Signal] = []
     metadata_out: dict = {"policy": policy, "type": "python-package"}
 
-    if policy["require_exact_pin"] and not version:
-        signals.append(Signal("unpinned_version", "critical", 50, "Exact version pin is required. Use name==version."))
+    if not version:
+        severity = "critical" if policy["require_exact_pin"] else "high"
+        score = 50 if policy["require_exact_pin"] else 25
+        message = "Exact version pin is required. Use name==version." if policy["require_exact_pin"] else "Version is not pinned. Provide name==version for deterministic and auditable analysis."
+        signals.append(Signal("unpinned_version", severity, score, message))
         return _finalize(spec, signals, metadata_out, policy)
-
-    assert version is not None
     if policy.get("critical_packages") and name in policy["critical_packages"]:
         metadata_out["critical_package"] = True
 
-    pypi = fetch_pypi_metadata(name, version)
+    try:
+        pypi = fetch_pypi_metadata(name, version)
+    except Exception as exc:
+        signals.append(
+            Signal(
+                "metadata_fetch_failed",
+                "high",
+                35,
+                "Package metadata could not be fetched from upstream index.",
+                [f"{type(exc).__name__}: {exc}"][:1],
+            )
+        )
+        return _finalize(f"{name}=={version}", signals, metadata_out, policy)
+
     meta_signals, meta_info = metadata_signals(pypi, version, policy)
     signals.extend(meta_signals)
     metadata_out.update(meta_info)
