@@ -4,7 +4,7 @@ import unittest
 from urllib.error import URLError
 from unittest.mock import patch
 
-from trustgate.engine import analyze_package, analyze_requirements, decide
+from trustgate.engine import analyze_package, analyze_requirements, decide, decide_with_trace
 from trustgate.models import Signal
 from trustgate.policy import DEFAULT_POLICY, merge_policy, validate_policy
 from trustgate.sandbox import build_sandbox_command
@@ -44,6 +44,16 @@ class TestDecisionEngine(unittest.TestCase):
         self.assertEqual(decision, "block")
         self.assertEqual(score, 99)
 
+    def test_decide_with_trace_contains_final_reason(self) -> None:
+        score, decision, trace = decide_with_trace(
+            [Signal("recent_release", "medium", 12, "x")],
+            {"block_total_risk_gte": 100, "sandbox_total_risk_gte": 30},
+        )
+        self.assertEqual(score, 88)
+        self.assertEqual(decision, "sandbox")
+        self.assertEqual(trace[-1]["rule"], "final_decision")
+        self.assertEqual(trace[-1]["reason"], "sandbox_signal_present")
+
 
 class TestRequirements(unittest.TestCase):
     def test_parse_requirements_file_flags_invalid_lines(self) -> None:
@@ -73,6 +83,7 @@ class TestResilience(unittest.TestCase):
             result = analyze_package("requests==2.32.3")
         self.assertEqual(result.decision, "sandbox")
         self.assertTrue(any(s.name == "metadata_fetch_failed" for s in result.signals))
+        self.assertIn("decision_trace", result.metadata)
 
     def test_http_get_json_retries_transient_errors(self) -> None:
         calls = {"count": 0}

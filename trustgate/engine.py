@@ -38,28 +38,69 @@ SANDBOX_SIGNAL_NAMES = {
     "shell_exfil_patterns",
 }
 
-def decide(signals: list[Signal], policy: dict) -> tuple[int, str]:
+def decide_with_trace(signals: list[Signal], policy: dict) -> tuple[int, str, list[dict]]:
     total_risk = sum(s.score for s in signals)
     trust_score = max(0, 100 - min(100, total_risk))
-
     signal_names = {s.name for s in signals}
 
+    trace: list[dict] = [
+        {
+            "rule": "aggregate_risk",
+            "total_risk": total_risk,
+            "trust_score": trust_score,
+        },
+        {
+            "rule": "blocking_signal_present",
+            "matched_signals": sorted(signal_names & BLOCKING_SIGNAL_NAMES),
+            "matched": bool(signal_names & BLOCKING_SIGNAL_NAMES),
+        },
+        {
+            "rule": "block_total_risk_threshold",
+            "threshold": policy["block_total_risk_gte"],
+            "value": total_risk,
+            "matched": total_risk >= policy["block_total_risk_gte"],
+        },
+        {
+            "rule": "sandbox_signal_present",
+            "matched_signals": sorted(signal_names & SANDBOX_SIGNAL_NAMES),
+            "matched": bool(signal_names & SANDBOX_SIGNAL_NAMES),
+        },
+        {
+            "rule": "sandbox_total_risk_threshold",
+            "threshold": policy["sandbox_total_risk_gte"],
+            "value": total_risk,
+            "matched": total_risk >= policy["sandbox_total_risk_gte"],
+        },
+    ]
+
     if signal_names & BLOCKING_SIGNAL_NAMES:
-        return trust_score, "block"
+        trace.append({"rule": "final_decision", "decision": "block", "reason": "blocking_signal_present"})
+        return trust_score, "block", trace
     if total_risk >= policy["block_total_risk_gte"]:
-        return trust_score, "block"
+        trace.append({"rule": "final_decision", "decision": "block", "reason": "block_total_risk_threshold"})
+        return trust_score, "block", trace
 
     if signal_names & SANDBOX_SIGNAL_NAMES:
-        return trust_score, "sandbox"
+        trace.append({"rule": "final_decision", "decision": "sandbox", "reason": "sandbox_signal_present"})
+        return trust_score, "sandbox", trace
     if total_risk >= policy["sandbox_total_risk_gte"]:
-        return trust_score, "sandbox"
+        trace.append({"rule": "final_decision", "decision": "sandbox", "reason": "sandbox_total_risk_threshold"})
+        return trust_score, "sandbox", trace
 
-    return trust_score, "allow"
+    trace.append({"rule": "final_decision", "decision": "allow", "reason": "no_rules_matched"})
+    return trust_score, "allow", trace
+
+
+def decide(signals: list[Signal], policy: dict) -> tuple[int, str]:
+    trust_score, decision, _ = decide_with_trace(signals, policy)
+    return trust_score, decision
 
 
 def _finalize(subject: str, signals: list[Signal], metadata: dict, policy: dict) -> AnalysisResult:
     signals = sorted(signals, key=lambda s: (SEVERITY_ORDER[s.severity], s.score), reverse=True)
-    trust_score, decision = decide(signals, policy)
+    trust_score, decision, trace = decide_with_trace(signals, policy)
+    metadata = dict(metadata)
+    metadata["decision_trace"] = trace
     top = "; ".join(f"{s.name}: {s.message}" for s in signals[:3]) if signals else "No major red flags found."
     summary = f"Decision: {decision}. {top}"
     return AnalysisResult(subject, trust_score, decision, summary, signals, metadata)

@@ -28,6 +28,7 @@ Depending on the stage, that can also mean:
 - **Mirrored** — approved internal package or image source
 - **Verified** — signatures and provenance pass policy
 - **Explainable** — every decision includes findings and evidence
+- **Traceable** — machine-readable `decision_trace` shows which rules matched and why
 
 ---
 
