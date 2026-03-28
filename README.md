@@ -138,6 +138,8 @@ flowchart LR
 
 TrustGate works best with **different policy profiles for different stages** of the software lifecycle.
 
+> Policy files are schema-validated and should declare `"policy_version": 1`.
+
 ### `policies/local_analysis_policy.json`
 Use this for:
 
