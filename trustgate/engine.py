@@ -38,28 +38,69 @@ SANDBOX_SIGNAL_NAMES = {
     "shell_exfil_patterns",
 }
 
-def decide(signals: list[Signal], policy: dict) -> tuple[int, str]:
+def decide_with_trace(signals: list[Signal], policy: dict) -> tuple[int, str, list[dict]]:
     total_risk = sum(s.score for s in signals)
     trust_score = max(0, 100 - min(100, total_risk))
-
     signal_names = {s.name for s in signals}
 
+    trace: list[dict] = [
+        {
+            "rule": "aggregate_risk",
+            "total_risk": total_risk,
+            "trust_score": trust_score,
+        },
+        {
+            "rule": "blocking_signal_present",
+            "matched_signals": sorted(signal_names & BLOCKING_SIGNAL_NAMES),
+            "matched": bool(signal_names & BLOCKING_SIGNAL_NAMES),
+        },
+        {
+            "rule": "block_total_risk_threshold",
+            "threshold": policy["block_total_risk_gte"],
+            "value": total_risk,
+            "matched": total_risk >= policy["block_total_risk_gte"],
+        },
+        {
+            "rule": "sandbox_signal_present",
+            "matched_signals": sorted(signal_names & SANDBOX_SIGNAL_NAMES),
+            "matched": bool(signal_names & SANDBOX_SIGNAL_NAMES),
+        },
+        {
+            "rule": "sandbox_total_risk_threshold",
+            "threshold": policy["sandbox_total_risk_gte"],
+            "value": total_risk,
+            "matched": total_risk >= policy["sandbox_total_risk_gte"],
+        },
+    ]
+
     if signal_names & BLOCKING_SIGNAL_NAMES:
-        return trust_score, "block"
+        trace.append({"rule": "final_decision", "decision": "block", "reason": "blocking_signal_present"})
+        return trust_score, "block", trace
     if total_risk >= policy["block_total_risk_gte"]:
-        return trust_score, "block"
+        trace.append({"rule": "final_decision", "decision": "block", "reason": "block_total_risk_threshold"})
+        return trust_score, "block", trace
 
     if signal_names & SANDBOX_SIGNAL_NAMES:
-        return trust_score, "sandbox"
+        trace.append({"rule": "final_decision", "decision": "sandbox", "reason": "sandbox_signal_present"})
+        return trust_score, "sandbox", trace
     if total_risk >= policy["sandbox_total_risk_gte"]:
-        return trust_score, "sandbox"
+        trace.append({"rule": "final_decision", "decision": "sandbox", "reason": "sandbox_total_risk_threshold"})
+        return trust_score, "sandbox", trace
 
-    return trust_score, "allow"
+    trace.append({"rule": "final_decision", "decision": "allow", "reason": "no_rules_matched"})
+    return trust_score, "allow", trace
+
+
+def decide(signals: list[Signal], policy: dict) -> tuple[int, str]:
+    trust_score, decision, _ = decide_with_trace(signals, policy)
+    return trust_score, decision
 
 
 def _finalize(subject: str, signals: list[Signal], metadata: dict, policy: dict) -> AnalysisResult:
     signals = sorted(signals, key=lambda s: (SEVERITY_ORDER[s.severity], s.score), reverse=True)
-    trust_score, decision = decide(signals, policy)
+    trust_score, decision, trace = decide_with_trace(signals, policy)
+    metadata = dict(metadata)
+    metadata["decision_trace"] = trace
     top = "; ".join(f"{s.name}: {s.message}" for s in signals[:3]) if signals else "No major red flags found."
     summary = f"Decision: {decision}. {top}"
     return AnalysisResult(subject, trust_score, decision, summary, signals, metadata)
@@ -71,15 +112,29 @@ def analyze_package(spec: str, policy_override: dict | None = None) -> AnalysisR
     signals: list[Signal] = []
     metadata_out: dict = {"policy": policy, "type": "python-package"}
 
-    if policy["require_exact_pin"] and not version:
-        signals.append(Signal("unpinned_version", "critical", 50, "Exact version pin is required. Use name==version."))
+    if not version:
+        severity = "critical" if policy["require_exact_pin"] else "high"
+        score = 50 if policy["require_exact_pin"] else 25
+        message = "Exact version pin is required. Use name==version." if policy["require_exact_pin"] else "Version is not pinned. Provide name==version for deterministic and auditable analysis."
+        signals.append(Signal("unpinned_version", severity, score, message))
         return _finalize(spec, signals, metadata_out, policy)
-
-    assert version is not None
     if policy.get("critical_packages") and name in policy["critical_packages"]:
         metadata_out["critical_package"] = True
 
-    pypi = fetch_pypi_metadata(name, version)
+    try:
+        pypi = fetch_pypi_metadata(name, version)
+    except Exception as exc:
+        signals.append(
+            Signal(
+                "metadata_fetch_failed",
+                "high",
+                35,
+                "Package metadata could not be fetched from upstream index.",
+                [f"{type(exc).__name__}: {exc}"][:1],
+            )
+        )
+        return _finalize(f"{name}=={version}", signals, metadata_out, policy)
+
     meta_signals, meta_info = metadata_signals(pypi, version, policy)
     signals.extend(meta_signals)
     metadata_out.update(meta_info)
